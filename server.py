@@ -30,6 +30,11 @@ def get_collection_uri():
     return f"https://blog.hatena.ne.jp/{HATENA_ID}/{HATENA_BLOG_ID}/atom/entry"
 
 
+def get_entry_uri(entry_id: str):
+    """エントリーURIを生成"""
+    return f"https://blog.hatena.ne.jp/{HATENA_ID}/{HATENA_BLOG_ID}/atom/entry/{entry_id}"
+
+
 def get_cache_path(key: str) -> Path:
     """キャッシュファイルのパスを生成"""
     # キーをハッシュ化してファイル名にする
@@ -153,9 +158,7 @@ async def get_entry(entry_id: str, use_cache: bool = True) -> Dict[str, Any]:
         if cached:
             return {**cached, "from_cache": True}
 
-    url = (
-        f"https://blog.hatena.ne.jp/{HATENA_ID}/{HATENA_BLOG_ID}/atom/entry/{entry_id}"
-    )
+    url = get_entry_uri(entry_id)
 
     response = requests.get(url, auth=get_auth())
 
