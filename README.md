@@ -88,6 +88,31 @@ uv run python server.py
 - `--update-cache`オプションでキャッシュを手動更新できます
 - 全ての記事検索と取得はキャッシュから高速に行われます
 
+## Claude Desktopでの設定
+
+Claude Desktopの設定ファイルに以下を追加することで、MCPサーバーとして利用できます：
+
+```json
+{
+  "mcpServers": {
+    "hatena-blog": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/path/to/hatena-blog-mcp",
+        "run",
+        "server.py"
+      ]
+    }
+  }
+}
+```
+
+`/path/to/hatena-blog-mcp`は実際のプロジェクトディレクトリのパスに置き換えてください。
+
+設定ファイルの場所：
+- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
+
 ## ライセンス
 
 MIT License
