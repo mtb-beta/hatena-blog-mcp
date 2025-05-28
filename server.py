@@ -1,5 +1,7 @@
+import asyncio
 import hashlib
 import json
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -32,7 +34,9 @@ def get_collection_uri():
 
 def get_entry_uri(entry_id: str):
     """エントリーURIを生成"""
-    return f"https://blog.hatena.ne.jp/{HATENA_ID}/{HATENA_BLOG_ID}/atom/entry/{entry_id}"
+    return (
+        f"https://blog.hatena.ne.jp/{HATENA_ID}/{HATENA_BLOG_ID}/atom/entry/{entry_id}"
+    )
 
 
 def get_cache_path(key: str) -> Path:
@@ -137,162 +141,79 @@ async def list_entries(
 
 
 @mcp.tool()
-async def get_entry(entry_id: str, use_cache: bool = True) -> Dict[str, Any]:
+async def get_entry(entry_id: str) -> Dict[str, Any]:
     """
     特定の記事を取得
 
     Args:
         entry_id: 記事ID（記事一覧で取得したID）
-        use_cache: キャッシュを使用するか（デフォルト: True）
 
     Returns:
         記事の詳細情報
     """
-    if not all([HATENA_ID, HATENA_BLOG_ID, HATENA_API_KEY]):
-        return {"error": "環境変数を設定してください"}
-
     # キャッシュをチェック
     cache_key = f"entry_{entry_id}"
-    if use_cache:
-        cached = load_cache(cache_key)
-        if cached:
-            return {**cached, "from_cache": True}
+    cached = load_cache(cache_key)
+    if cached:
+        return cached
 
-    url = get_entry_uri(entry_id)
-
-    response = requests.get(url, auth=get_auth())
-
-    if response.status_code != 200:
-        return {"error": f"Failed to fetch entry: {response.status_code}"}
-
-    root = etree.fromstring(response.content)
-    ns = {
-        "atom": "http://www.w3.org/2005/Atom",
-        "hatena": "http://www.hatena.ne.jp/info/xmlns#",
-    }
-
-    result = {
-        "id": root.find("atom:id", ns).text,
-        "title": root.find("atom:title", ns).text,
-        "content": root.find("atom:content", ns).text,
-        "content_type": root.find("atom:content", ns).get("type", "text"),
-        "published": root.find("atom:published", ns).text,
-        "updated": root.find("atom:updated", ns).text,
-        "categories": [cat.get("term") for cat in root.findall("atom:category", ns)],
-        "draft": root.find("hatena:draft", ns).text == "yes"
-        if root.find("hatena:draft", ns) is not None
-        else False,
-    }
-
-    # キャッシュに保存
-    if use_cache:
-        save_cache(cache_key, result)
-
-    return result
+    # キャッシュがない場合はエラー
+    return {"error": "記事が見つかりません。キャッシュを更新してください。"}
 
 
 @mcp.tool()
-async def search_entries(
-    keyword: str, max_results: int = 10, use_cache: bool = True
-) -> Dict[str, Any]:
+async def search_entries(keyword: str, max_results: int = 10) -> Dict[str, Any]:
     """
-    キーワードで記事を検索（キャッシュ優先）
+    キーワードで記事を検索
 
     Args:
         keyword: 検索キーワード
         max_results: 取得する最大記事数
-        use_cache: キャッシュを使用するか（デフォルト: True）
 
     Returns:
         検索結果の記事一覧
     """
-    # キャッシュが利用可能でuse_cacheがTrueの場合、キャッシュから検索
-    if use_cache and CACHE_DIR.exists():
-        keyword_lower = keyword.lower()
-        matched_entries = []
+    if not CACHE_DIR.exists():
+        return {
+            "error": "キャッシュが存在しません。サーバー側でキャッシュを更新してください。"
+        }
 
-        # キャッシュディレクトリ内の全ファイルを検索
-        for cache_file in CACHE_DIR.glob("*.json"):
-            try:
-                cached = load_cache(cache_file.stem)
-                if not cached:
-                    continue
+    keyword_lower = keyword.lower()
+    matched_entries = []
 
-                # タイトルで検索
-                if keyword_lower in cached.get("title", "").lower():
-                    matched_entries.append(cached)
-                    continue
-
-                # カテゴリで検索
-                if any(
-                    keyword_lower in cat.lower() for cat in cached.get("categories", [])
-                ):
-                    matched_entries.append(cached)
-                    continue
-
-                # 本文で検索
-                if keyword_lower in cached.get("content", "").lower():
-                    matched_entries.append(cached)
-
-                if len(matched_entries) >= max_results:
-                    break
-
-            except Exception:
+    # キャッシュディレクトリ内の全ファイルを検索
+    for cache_file in CACHE_DIR.glob("*.json"):
+        try:
+            cached = load_cache(cache_file.stem)
+            if not cached:
                 continue
 
-        if matched_entries:
-            return {
-                "entries": matched_entries[:max_results],
-                "count": len(matched_entries[:max_results]),
-                "keyword": keyword,
-                "from_cache": True,
-            }
-
-    # キャッシュがないまたはuse_cacheがFalseの場合、APIから検索
-    if not all([HATENA_ID, HATENA_BLOG_ID, HATENA_API_KEY]):
-        return {"error": "環境変数を設定してください"}
-
-    all_entries = []
-    next_url = None
-    keyword_lower = keyword.lower()
-
-    # ページネーションを使って全記事を検索
-    while len(all_entries) < max_results * 3:  # 検索のため多めに取得
-        result = await list_entries(page_url=next_url, max_results=50)
-        if "error" in result:
-            return result
-
-        for entry in result["entries"]:
             # タイトルで検索
-            if keyword_lower in entry["title"].lower():
-                all_entries.append(entry)
+            if keyword_lower in cached.get("title", "").lower():
+                matched_entries.append(cached)
                 continue
 
             # カテゴリで検索
-            if any(keyword_lower in cat.lower() for cat in entry["categories"]):
-                all_entries.append(entry)
+            if any(
+                keyword_lower in cat.lower() for cat in cached.get("categories", [])
+            ):
+                matched_entries.append(cached)
                 continue
 
-            # 本文も検索対象にする場合
-            entry_detail = await get_entry(entry["id"].split("/")[-1])
-            if (
-                "content" in entry_detail
-                and keyword_lower in entry_detail["content"].lower()
-            ):
-                all_entries.append(entry)
+            # 本文で検索
+            if keyword_lower in cached.get("content", "").lower():
+                matched_entries.append(cached)
 
-            if len(all_entries) >= max_results:
+            if len(matched_entries) >= max_results:
                 break
 
-        next_url = result.get("next_page_url")
-        if not next_url or len(all_entries) >= max_results:
-            break
+        except Exception:
+            continue
 
     return {
-        "entries": all_entries[:max_results],
-        "count": len(all_entries[:max_results]),
+        "entries": matched_entries[:max_results],
+        "count": len(matched_entries[:max_results]),
         "keyword": keyword,
-        "from_cache": False,
     }
 
 
@@ -378,7 +299,39 @@ async def get_entries_by_category(
     }
 
 
-@mcp.tool()
+async def fetch_entry_from_api(entry_id: str) -> Dict[str, Any]:
+    """
+    APIから記事を取得（内部使用）
+    """
+    if not all([HATENA_ID, HATENA_BLOG_ID, HATENA_API_KEY]):
+        return {"error": "環境変数を設定してください"}
+
+    url = get_entry_uri(entry_id)
+    response = requests.get(url, auth=get_auth())
+
+    if response.status_code != 200:
+        return {"error": f"Failed to fetch entry: {response.status_code}"}
+
+    root = etree.fromstring(response.content)
+    ns = {
+        "atom": "http://www.w3.org/2005/Atom",
+        "hatena": "http://www.hatena.ne.jp/info/xmlns#",
+    }
+
+    return {
+        "id": root.find("atom:id", ns).text,
+        "title": root.find("atom:title", ns).text,
+        "content": root.find("atom:content", ns).text,
+        "content_type": root.find("atom:content", ns).get("type", "text"),
+        "published": root.find("atom:published", ns).text,
+        "updated": root.find("atom:updated", ns).text,
+        "categories": [cat.get("term") for cat in root.findall("atom:category", ns)],
+        "draft": root.find("hatena:draft", ns).text == "yes"
+        if root.find("hatena:draft", ns) is not None
+        else False,
+    }
+
+
 async def sync_all_entries_to_cache() -> Dict[str, Any]:
     """
     全ての記事をキャッシュに同期
@@ -402,9 +355,13 @@ async def sync_all_entries_to_cache() -> Dict[str, Any]:
         for entry in result["entries"]:
             entry_id = entry["id"].split("/")[-1]
             try:
-                # キャッシュを強制的に更新
-                await get_entry(entry_id, use_cache=False)
-                synced_count += 1
+                # APIから取得してキャッシュに保存
+                entry_detail = await fetch_entry_from_api(entry_id)
+                if "error" not in entry_detail:
+                    save_cache(f"entry_{entry_id}", entry_detail)
+                    synced_count += 1
+                else:
+                    error_count += 1
             except Exception:
                 error_count += 1
 
@@ -419,22 +376,48 @@ async def sync_all_entries_to_cache() -> Dict[str, Any]:
     }
 
 
-
-
-@mcp.tool()
-async def clear_blog_cache() -> Dict[str, Any]:
-    """
-    ブログのキャッシュをクリア
-
-    Returns:
-        クリア結果
-    """
-    if clear_cache():
-        return {"message": "キャッシュをクリアしました"}
-    else:
-        return {"message": "キャッシュディレクトリが存在しません"}
+async def update_cache():
+    """キャッシュを更新"""
+    print("キャッシュを更新しています...")
+    result = await sync_all_entries_to_cache()
+    if "error" in result:
+        print(f"エラー: {result['error']}")
+        return False
+    print(f"キャッシュ更新完了: {result['synced']}件の記事を同期しました")
+    if result["errors"] > 0:
+        print(f"警告: {result['errors']}件のエラーが発生しました")
+    return True
 
 
 if __name__ == "__main__":
-    # サーバーを起動
-    mcp.run()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="はてなブログMCPServer")
+    parser.add_argument("--update-cache", action="store_true", help="キャッシュを更新")
+    parser.add_argument("--clear-cache", action="store_true", help="キャッシュをクリア")
+
+    args = parser.parse_args()
+
+    if args.update_cache:
+        # キャッシュ更新モード
+        asyncio.run(update_cache())
+    elif args.clear_cache:
+        # キャッシュクリアモード
+        if clear_cache():
+            print("キャッシュをクリアしました")
+        else:
+            print("キャッシュディレクトリが存在しません")
+    else:
+        # サーバー起動モード
+        # キャッシュが存在しない場合は自動で更新
+        if not CACHE_DIR.exists() or not any(CACHE_DIR.glob("*.json")):
+            print("初回起動のため、キャッシュを更新します...")
+            if asyncio.run(update_cache()):
+                print("サーバーを起動します...")
+                mcp.run()
+            else:
+                print("キャッシュの更新に失敗しました")
+                sys.exit(1)
+        else:
+            # サーバーを起動
+            mcp.run()

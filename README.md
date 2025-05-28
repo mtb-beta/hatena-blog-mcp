@@ -29,11 +29,23 @@ HATENA_API_KEY=あなたのAPIキー
 
 APIキーは[はてなブログの設定ページ](https://blog.hatena.ne.jp/)から取得できます。
 
-### 3. サーバーの起動
+### 3. キャッシュの管理
+
+```bash
+# キャッシュを更新（全記事をローカルに保存）
+uv run python server.py --update-cache
+
+# キャッシュをクリア
+uv run python server.py --clear-cache
+```
+
+### 4. サーバーの起動
 
 ```bash
 uv run python server.py
 ```
+
+※ 初回起動時またはキャッシュが存在しない場合は、自動的にキャッシュを更新します。
 
 ## 利用可能なツール
 
@@ -45,19 +57,17 @@ uv run python server.py
 - `max_results` (optional): 取得する最大記事数（デフォルト: 10）
 
 ### `get_entry`
-特定の記事の詳細を取得します。
+特定の記事の詳細を取得します。キャッシュから取得します。
 
 **パラメータ:**
 - `entry_id`: 記事ID
-- `use_cache` (optional): キャッシュを使用するか（デフォルト: True）
 
 ### `search_entries`
-記事をキーワードで検索します。キャッシュが存在する場合はキャッシュから高速検索します。
+記事をキーワードで検索します。キャッシュから高速検索します。
 
 **パラメータ:**
 - `keyword`: 検索キーワード
 - `max_results` (optional): 取得する最大記事数（デフォルト: 10）
-- `use_cache` (optional): キャッシュを使用するか（デフォルト: True）
 
 ### `get_categories`
 全てのカテゴリと記事数を取得します。
@@ -69,18 +79,14 @@ uv run python server.py
 - `category`: カテゴリ名
 - `max_results` (optional): 取得する最大記事数（デフォルト: 10）
 
-### `sync_all_entries_to_cache`
-全ての記事をキャッシュに同期します。高速検索を使用する前に実行してください。
-
-### `clear_blog_cache`
-キャッシュをクリアします。
 
 ## キャッシュについて
 
 - キャッシュは`blog_cache/`ディレクトリに保存されます
 - キャッシュの有効期限は1年間です
-- `sync_all_entries_to_cache`を実行することで、全記事をローカルにキャッシュできます
-- `search_entries`はキャッシュが存在する場合、自動的にキャッシュから高速検索します
+- サーバー起動時にキャッシュがない場合は自動で更新されます
+- `--update-cache`オプションでキャッシュを手動更新できます
+- 全ての記事検索と取得はキャッシュから高速に行われます
 
 ## ライセンス
 
