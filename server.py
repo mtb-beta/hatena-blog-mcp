@@ -18,7 +18,7 @@ HATENA_BLOG_ID = config("HATENA_BLOG_ID")
 HATENA_API_KEY = config("HATENA_API_KEY")
 
 # キャッシュ設定
-CACHE_DIR = Path("blog_cache")
+CACHE_DIR = Path.home() / ".cache" / "hatena-blog-mcp"
 CACHE_EXPIRY_HOURS = 24 * 365  # キャッシュの有効期限（1年）
 
 

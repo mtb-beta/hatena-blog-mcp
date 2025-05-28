@@ -70,4 +70,5 @@ Thumbs.db
 cache/
 .cache/
 blog_cache/
+~/.cache/hatena-blog-mcp/
 EOF < /dev/null
