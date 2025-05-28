@@ -14,11 +14,7 @@
 ### 1. 依存関係のインストール
 
 ```bash
-# uvを使用する場合
 uv sync
-
-# または pipを使用する場合
-pip install -r requirements.txt
 ```
 
 ### 2. 環境変数の設定
@@ -36,7 +32,7 @@ APIキーは[はてなブログの設定ページ](https://blog.hatena.ne.jp/)�
 ### 3. サーバーの起動
 
 ```bash
-python server.py
+uv run python server.py
 ```
 
 ## 利用可能なツール
@@ -56,19 +52,12 @@ python server.py
 - `use_cache` (optional): キャッシュを使用するか（デフォルト: True）
 
 ### `search_entries`
-記事をキーワードで検索します（APIから直接検索）。
+記事をキーワードで検索します。キャッシュが存在する場合はキャッシュから高速検索します。
 
 **パラメータ:**
 - `keyword`: 検索キーワード
 - `max_results` (optional): 取得する最大記事数（デフォルト: 10）
-- `search_in_content` (optional): 本文も検索対象にするか（デフォルト: True）
-
-### `search_entries_cached`
-キャッシュされた記事から高速検索します。
-
-**パラメータ:**
-- `keyword`: 検索キーワード
-- `max_results` (optional): 取得する最大記事数（デフォルト: 10）
+- `use_cache` (optional): キャッシュを使用するか（デフォルト: True）
 
 ### `get_categories`
 全てのカテゴリと記事数を取得します。
@@ -91,9 +80,8 @@ python server.py
 - キャッシュは`blog_cache/`ディレクトリに保存されます
 - キャッシュの有効期限は1年間です
 - `sync_all_entries_to_cache`を実行することで、全記事をローカルにキャッシュできます
-- `search_entries_cached`を使用すると、キャッシュから高速に検索できます
+- `search_entries`はキャッシュが存在する場合、自動的にキャッシュから高速検索します
 
 ## ライセンス
 
 MIT License
-EOF < /dev/null

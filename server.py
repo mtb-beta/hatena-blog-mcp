@@ -193,19 +193,62 @@ async def get_entry(entry_id: str, use_cache: bool = True) -> Dict[str, Any]:
 
 @mcp.tool()
 async def search_entries(
-    keyword: str, max_results: int = 10, search_in_content: bool = True
+    keyword: str, max_results: int = 10, use_cache: bool = True
 ) -> Dict[str, Any]:
     """
-    キーワードで記事を検索
+    キーワードで記事を検索（キャッシュ優先）
 
     Args:
         keyword: 検索キーワード
         max_results: 取得する最大記事数
-        search_in_content: 本文も検索対象にするか（Trueの場合、処理が重くなる可能性あり）
+        use_cache: キャッシュを使用するか（デフォルト: True）
 
     Returns:
         検索結果の記事一覧
     """
+    # キャッシュが利用可能でuse_cacheがTrueの場合、キャッシュから検索
+    if use_cache and CACHE_DIR.exists():
+        keyword_lower = keyword.lower()
+        matched_entries = []
+
+        # キャッシュディレクトリ内の全ファイルを検索
+        for cache_file in CACHE_DIR.glob("*.json"):
+            try:
+                cached = load_cache(cache_file.stem)
+                if not cached:
+                    continue
+
+                # タイトルで検索
+                if keyword_lower in cached.get("title", "").lower():
+                    matched_entries.append(cached)
+                    continue
+
+                # カテゴリで検索
+                if any(
+                    keyword_lower in cat.lower() for cat in cached.get("categories", [])
+                ):
+                    matched_entries.append(cached)
+                    continue
+
+                # 本文で検索
+                if keyword_lower in cached.get("content", "").lower():
+                    matched_entries.append(cached)
+
+                if len(matched_entries) >= max_results:
+                    break
+
+            except Exception:
+                continue
+
+        if matched_entries:
+            return {
+                "entries": matched_entries[:max_results],
+                "count": len(matched_entries[:max_results]),
+                "keyword": keyword,
+                "from_cache": True,
+            }
+
+    # キャッシュがないまたはuse_cacheがFalseの場合、APIから検索
     if not all([HATENA_ID, HATENA_BLOG_ID, HATENA_API_KEY]):
         return {"error": "環境変数を設定してください"}
 
@@ -231,13 +274,12 @@ async def search_entries(
                 continue
 
             # 本文も検索対象にする場合
-            if search_in_content:
-                entry_detail = await get_entry(entry["id"].split("/")[-1])
-                if (
-                    "content" in entry_detail
-                    and keyword_lower in entry_detail["content"].lower()
-                ):
-                    all_entries.append(entry)
+            entry_detail = await get_entry(entry["id"].split("/")[-1])
+            if (
+                "content" in entry_detail
+                and keyword_lower in entry_detail["content"].lower()
+            ):
+                all_entries.append(entry)
 
             if len(all_entries) >= max_results:
                 break
@@ -250,6 +292,7 @@ async def search_entries(
         "entries": all_entries[:max_results],
         "count": len(all_entries[:max_results]),
         "keyword": keyword,
+        "from_cache": False,
     }
 
 
@@ -376,61 +419,6 @@ async def sync_all_entries_to_cache() -> Dict[str, Any]:
     }
 
 
-@mcp.tool()
-async def search_entries_cached(keyword: str, max_results: int = 10) -> Dict[str, Any]:
-    """
-    キャッシュから高速に記事を検索
-
-    Args:
-        keyword: 検索キーワード
-        max_results: 取得する最大記事数
-
-    Returns:
-        検索結果の記事一覧
-    """
-    if not CACHE_DIR.exists():
-        return {
-            "error": "キャッシュが存在しません。先に sync_all_entries_to_cache を実行してください"
-        }
-
-    keyword_lower = keyword.lower()
-    matched_entries = []
-
-    # キャッシュディレクトリ内の全ファイルを検索
-    for cache_file in CACHE_DIR.glob("*.json"):
-        try:
-            cached = load_cache(cache_file.stem)
-            if not cached:
-                continue
-
-            # タイトルで検索
-            if keyword_lower in cached.get("title", "").lower():
-                matched_entries.append(cached)
-                continue
-
-            # カテゴリで検索
-            if any(
-                keyword_lower in cat.lower() for cat in cached.get("categories", [])
-            ):
-                matched_entries.append(cached)
-                continue
-
-            # 本文で検索
-            if keyword_lower in cached.get("content", "").lower():
-                matched_entries.append(cached)
-
-            if len(matched_entries) >= max_results:
-                break
-
-        except Exception:
-            continue
-
-    return {
-        "entries": matched_entries[:max_results],
-        "count": len(matched_entries[:max_results]),
-        "keyword": keyword,
-        "from_cache": True,
-    }
 
 
 @mcp.tool()
