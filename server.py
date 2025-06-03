@@ -91,7 +91,9 @@ def clear_cache():
 
 @mcp.tool()
 async def list_entries(
-    page_url: Optional[str] = None, max_results: int = 10
+    page_url: Optional[str] = None, 
+    max_results: int = 10,
+    include_drafts: bool = False
 ) -> Dict[str, Any]:
     """
     ブログ記事一覧を取得
@@ -99,6 +101,7 @@ async def list_entries(
     Args:
         page_url: ページネーション用URL（省略時は最新記事から）
         max_results: 取得する最大記事数
+        include_drafts: 下書き記事を含めるかどうか（デフォルト: False）
 
     Returns:
         記事一覧と次ページURL
@@ -120,7 +123,21 @@ async def list_entries(
     ns = {"atom": "http://www.w3.org/2005/Atom"}
 
     entries = []
-    for entry in root.xpath("//atom:entry", namespaces=ns)[:max_results]:
+    for entry in root.xpath("//atom:entry", namespaces=ns):
+        # 下書きフラグをチェック
+        if not include_drafts:
+            # エントリーIDを取得してキャッシュを確認
+            entry_id = entry.find("atom:id", ns).text.split("/")[-1]
+            cache_key = f"entry_{entry_id}"
+            cached = load_cache(cache_key)
+            
+            # キャッシュに記事がある場合は下書きかどうかを確認
+            if cached and cached.get("draft", False):
+                continue
+        
+        if len(entries) >= max_results:
+            break
+            
         entry_data = {
             "id": entry.find("atom:id", ns).text,
             "title": entry.find("atom:title", ns).text,
@@ -162,13 +179,18 @@ async def get_entry(entry_id: str) -> Dict[str, Any]:
 
 
 @mcp.tool()
-async def search_entries(keyword: str, max_results: int = 10) -> Dict[str, Any]:
+async def search_entries(
+    keyword: str, 
+    max_results: int = 10, 
+    include_drafts: bool = False
+) -> Dict[str, Any]:
     """
     キーワードで記事を検索
 
     Args:
         keyword: 検索キーワード
         max_results: 取得する最大記事数
+        include_drafts: 下書き記事を含めるかどうか（デフォルト: False）
 
     Returns:
         検索結果の記事一覧
@@ -186,6 +208,10 @@ async def search_entries(keyword: str, max_results: int = 10) -> Dict[str, Any]:
         try:
             cached = load_cache(cache_file.stem)
             if not cached:
+                continue
+            
+            # 下書きをフィルタリング
+            if not include_drafts and cached.get("draft", False):
                 continue
 
             # タイトルで検索
@@ -258,7 +284,9 @@ async def get_categories() -> Dict[str, Any]:
 
 @mcp.tool()
 async def get_entries_by_category(
-    category: str, max_results: int = 10
+    category: str, 
+    max_results: int = 10,
+    include_drafts: bool = False
 ) -> Dict[str, Any]:
     """
     特定のカテゴリに属する記事一覧を取得
@@ -266,6 +294,7 @@ async def get_entries_by_category(
     Args:
         category: カテゴリ名
         max_results: 取得する最大記事数
+        include_drafts: 下書き記事を含めるかどうか（デフォルト: False）
 
     Returns:
         指定カテゴリの記事一覧
@@ -278,7 +307,7 @@ async def get_entries_by_category(
 
     # ページネーションを使って記事を検索
     while len(category_entries) < max_results:
-        result = await list_entries(page_url=next_url, max_results=50)
+        result = await list_entries(page_url=next_url, max_results=50, include_drafts=include_drafts)
         if "error" in result:
             return result
 

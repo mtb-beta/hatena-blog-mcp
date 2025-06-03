@@ -8,6 +8,7 @@
 - 🔍 キーワードによる記事検索
 - 🏷️ カテゴリ管理（一覧取得、カテゴリ別記事取得）
 - 💾 キャッシュ機能による高速検索
+- 📋 下書き記事のフィルタリング機能
 
 ## セットアップ
 
@@ -55,6 +56,7 @@ uv run python server.py
 **パラメータ:**
 - `page_url` (optional): ページネーション用URL
 - `max_results` (optional): 取得する最大記事数（デフォルト: 10）
+- `include_drafts` (optional): 下書き記事を含めるかどうか（デフォルト: False）
 
 ### `get_entry`
 特定の記事の詳細を取得します。キャッシュから取得します。
@@ -68,6 +70,7 @@ uv run python server.py
 **パラメータ:**
 - `keyword`: 検索キーワード
 - `max_results` (optional): 取得する最大記事数（デフォルト: 10）
+- `include_drafts` (optional): 下書き記事を含めるかどうか（デフォルト: False）
 
 ### `get_categories`
 全てのカテゴリと記事数を取得します。
@@ -78,6 +81,7 @@ uv run python server.py
 **パラメータ:**
 - `category`: カテゴリ名
 - `max_results` (optional): 取得する最大記事数（デフォルト: 10）
+- `include_drafts` (optional): 下書き記事を含めるかどうか（デフォルト: False）
 
 
 ## キャッシュについて
