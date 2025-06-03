@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import json
+import logging
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -10,6 +11,13 @@ import requests
 from decouple import config
 from fastmcp import FastMCP
 from lxml import etree
+
+# ロギングの設定
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 mcp = FastMCP("はてなブログ用MCPサーバー")
 
@@ -24,6 +32,7 @@ CACHE_EXPIRY_HOURS = 24 * 365  # キャッシュの有効期限（1年）
 
 def get_auth():
     """認証情報を返す"""
+    logger.debug(f"認証情報を取得: HATENA_ID={HATENA_ID}")
     return (HATENA_ID, HATENA_API_KEY)
 
 
@@ -49,7 +58,9 @@ def get_cache_path(key: str) -> Path:
 def load_cache(key: str) -> Optional[Dict[str, Any]]:
     """キャッシュを読み込む"""
     cache_path = get_cache_path(key)
+    logger.debug(f"キャッシュ読み込み: key={key}, path={cache_path}")
     if not cache_path.exists():
+        logger.debug(f"キャッシュが存在しません: {cache_path}")
         return None
 
     try:
@@ -59,18 +70,22 @@ def load_cache(key: str) -> Optional[Dict[str, Any]]:
         # キャッシュの有効期限をチェック
         cached_at = datetime.fromisoformat(cache_data["cached_at"])
         if datetime.now() - cached_at > timedelta(hours=CACHE_EXPIRY_HOURS):
+            logger.debug(f"キャッシュ期限切れ: {cache_path}")
             cache_path.unlink()  # 期限切れキャッシュを削除
             return None
 
+        logger.debug(f"キャッシュヒット: {key}")
         return cache_data["data"]
-    except (json.JSONDecodeError, KeyError, ValueError):
+    except (json.JSONDecodeError, KeyError, ValueError) as e:
         # 不正なキャッシュファイルは削除
+        logger.warning(f"不正なキャッシュファイル: {cache_path}, エラー: {e}")
         cache_path.unlink()
         return None
 
 
 def save_cache(key: str, data: Dict[str, Any]):
     """データをキャッシュに保存"""
+    logger.debug(f"キャッシュ保存: key={key}")
     CACHE_DIR.mkdir(exist_ok=True)
     cache_path = get_cache_path(key)
 
@@ -78,6 +93,7 @@ def save_cache(key: str, data: Dict[str, Any]):
 
     with open(cache_path, "w", encoding="utf-8") as f:
         json.dump(cache_data, f, ensure_ascii=False, indent=2)
+    logger.debug(f"キャッシュ保存完了: {cache_path}")
 
 
 def clear_cache():
@@ -103,16 +119,21 @@ async def list_entries(
     Returns:
         記事一覧と次ページURL
     """
+    logger.info(f"list_entries 呼び出し: page_url={page_url}, max_results={max_results}")
     if not all([HATENA_ID, HATENA_BLOG_ID, HATENA_API_KEY]):
+        logger.error("環境変数が設定されていません")
         return {
             "error": "環境変数 HATENA_ID, HATENA_BLOG_ID, HATENA_API_KEY を設定してください"
         }
 
     url = page_url or get_collection_uri()
+    logger.debug(f"API URL: {url}")
 
     response = requests.get(url, auth=get_auth())
+    logger.debug(f"API レスポンス: status_code={response.status_code}")
 
     if response.status_code != 200:
+        logger.error(f"APIエラー: {response.status_code}")
         return {"error": f"Failed to fetch entries: {response.status_code}"}
 
     # XMLをパース
@@ -137,6 +158,7 @@ async def list_entries(
     next_link = root.find("atom:link[@rel='next']", ns)
     next_page_url = next_link.get("href") if next_link is not None else None
 
+    logger.info(f"list_entries 完了: {len(entries)}件の記事を取得")
     return {"entries": entries, "next_page_url": next_page_url, "count": len(entries)}
 
 
@@ -151,13 +173,16 @@ async def get_entry(entry_id: str) -> Dict[str, Any]:
     Returns:
         記事の詳細情報
     """
+    logger.info(f"get_entry 呼び出し: entry_id={entry_id}")
     # キャッシュをチェック
     cache_key = f"entry_{entry_id}"
     cached = load_cache(cache_key)
     if cached:
+        logger.info(f"get_entry 完了: キャッシュから取得")
         return cached
 
     # キャッシュがない場合はエラー
+    logger.warning(f"get_entry: キャッシュに記事が存在しません entry_id={entry_id}")
     return {"error": "記事が見つかりません。キャッシュを更新してください。"}
 
 
@@ -173,7 +198,9 @@ async def search_entries(keyword: str, max_results: int = 10) -> Dict[str, Any]:
     Returns:
         検索結果の記事一覧
     """
+    logger.info(f"search_entries 呼び出し: keyword={keyword}, max_results={max_results}")
     if not CACHE_DIR.exists():
+        logger.error("キャッシュディレクトリが存在しません")
         return {
             "error": "キャッシュが存在しません。サーバー側でキャッシュを更新してください。"
         }
@@ -207,9 +234,11 @@ async def search_entries(keyword: str, max_results: int = 10) -> Dict[str, Any]:
             if len(matched_entries) >= max_results:
                 break
 
-        except Exception:
+        except Exception as e:
+            logger.warning(f"キャッシュファイル読み込みエラー: {cache_file}, エラー: {e}")
             continue
 
+    logger.info(f"search_entries 完了: {len(matched_entries[:max_results])}件の記事がマッチ")
     return {
         "entries": matched_entries[:max_results],
         "count": len(matched_entries[:max_results]),
@@ -303,13 +332,17 @@ async def fetch_entry_from_api(entry_id: str) -> Dict[str, Any]:
     """
     APIから記事を取得（内部使用）
     """
+    logger.debug(f"fetch_entry_from_api: entry_id={entry_id}")
     if not all([HATENA_ID, HATENA_BLOG_ID, HATENA_API_KEY]):
         return {"error": "環境変数を設定してください"}
 
     url = get_entry_uri(entry_id)
+    logger.debug(f"API URL: {url}")
     response = requests.get(url, auth=get_auth())
+    logger.debug(f"API レスポンス: status_code={response.status_code}")
 
     if response.status_code != 200:
+        logger.error(f"APIエラー: {response.status_code}")
         return {"error": f"Failed to fetch entry: {response.status_code}"}
 
     root = etree.fromstring(response.content)
@@ -339,6 +372,7 @@ async def sync_all_entries_to_cache() -> Dict[str, Any]:
     Returns:
         同期結果
     """
+    logger.info("キャッシュ同期を開始")
     if not all([HATENA_ID, HATENA_BLOG_ID, HATENA_API_KEY]):
         return {"error": "環境変数を設定してください"}
 
@@ -362,13 +396,15 @@ async def sync_all_entries_to_cache() -> Dict[str, Any]:
                     synced_count += 1
                 else:
                     error_count += 1
-            except Exception:
+            except Exception as e:
+                logger.error(f"エントリ同期エラー: entry_id={entry_id}, エラー: {e}")
                 error_count += 1
 
         next_url = result.get("next_page_url")
         if not next_url:
             break
 
+    logger.info(f"キャッシュ同期完了: 同期={synced_count}件, エラー={error_count}件")
     return {
         "synced": synced_count,
         "errors": error_count,
@@ -411,13 +447,17 @@ if __name__ == "__main__":
         # サーバー起動モード
         # キャッシュが存在しない場合は自動で更新
         if not CACHE_DIR.exists() or not any(CACHE_DIR.glob("*.json")):
+            logger.info("初回起動のため、キャッシュを更新します")
             print("初回起動のため、キャッシュを更新します...")
             if asyncio.run(update_cache()):
+                logger.info("サーバーを起動します")
                 print("サーバーを起動します...")
                 mcp.run()
             else:
+                logger.error("キャッシュの更新に失敗しました")
                 print("キャッシュの更新に失敗しました")
                 sys.exit(1)
         else:
             # サーバーを起動
+            logger.info("サーバーを起動します")
             mcp.run()
