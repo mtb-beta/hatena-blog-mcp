@@ -387,7 +387,9 @@ async def sync_all_entries_to_cache() -> Dict[str, Any]:
             return result
 
         for entry in result["entries"]:
-            entry_id = entry["id"].split("/")[-1]
+            # タグ形式のIDから数字のエントリーIDを抽出
+            # 例: "tag:blog.hatena.ne.jp,2013:blog-mtb_beta-10328749687202087533-6802418398316299513" -> "6802418398316299513"
+            entry_id = entry["id"].split("-")[-1]
             try:
                 # APIから取得してキャッシュに保存
                 entry_detail = await fetch_entry_from_api(entry_id)
