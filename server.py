@@ -211,7 +211,9 @@ async def search_entries(keyword: str, max_results: int = 10) -> Dict[str, Any]:
     # キャッシュディレクトリ内の全ファイルを検索
     for cache_file in CACHE_DIR.glob("*.json"):
         try:
-            cached = load_cache(cache_file.stem)
+            with open(cache_file, "r", encoding="utf-8") as f:
+                cache_data = json.load(f)
+            cached = cache_data.get("data")
             if not cached:
                 continue
 
